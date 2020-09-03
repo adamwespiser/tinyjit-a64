@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 46180af80add6479f4d0235ee5652327789c323c5ec22c5b7162151ea6260cd7
+-- hash: 60a37930568a39810ffc706fcaa7a8b218cea2d7d25c3d975ca719d455b18a87
 
 name:           tinyjit-a64
 version:        0.1.0.0
@@ -33,6 +33,7 @@ executable tinyjit-a64-exe
       Paths_tinyjit_a64
   hs-source-dirs:
       src
+  default-extensions: TypeApplications
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5

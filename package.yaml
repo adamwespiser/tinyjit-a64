@@ -11,6 +11,8 @@ extra-source-files:
 - README.md
 - ChangeLog.md
 
+default-extensions:
+  TypeApplications
 
 dependencies:
 - base >= 4.7 && < 5
