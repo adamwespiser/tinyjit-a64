@@ -1,0 +1,4 @@
+cradle:
+  stack:
+    component: "tinyjit-a64:exe:tinyjit-a64-exe"
+

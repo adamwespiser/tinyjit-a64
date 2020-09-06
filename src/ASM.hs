@@ -77,6 +77,7 @@ data Instr
   | SVC Word16 --supervisor/system call
   | SYS --system call
   | Br -- branch
+  | NOP
   | ADD Reg Reg
 
 zero32 :: Word32
@@ -91,5 +92,6 @@ encode (RET Nothing) = 0xD65F0000 -- we can probably replace this "magic  number
                                   -- with a smaller magic number, on per instruction type
 encode (RET (Just reg)) = 0xD65F0000
   .|. ((fromIntegral @Int @Word32 . fromEnum $ reg ) `shiftL` 5)
+encode (NOP) = 0xD503201F
 encode _ = zero32
 

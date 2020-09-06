@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 6f8681791c6538d5df3b2a188c740b17ba48b29349b0b5a7600ea892de9f722a
+-- hash: c1dd04dd30fcc90b290a926841ed9ece5eccc93bcb4db284130cbf17c27e6a7f
 
 name:           tinyjit-a64
 version:        0.1.0.0
@@ -29,7 +29,6 @@ executable tinyjit-a64-exe
   main-is: Main.hs
   other-modules:
       ASM
-      Lib
       Runtime
       Paths_tinyjit_a64
   hs-source-dirs:
