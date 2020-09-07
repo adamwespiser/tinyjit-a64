@@ -1,9 +1,8 @@
 module Main where
 
 import ASM
-import Runtime
-
-import Data.Word
+import Data.Word (Word32)
+import Runtime (allocateMemory, jit)
 
 dump :: [Word32] -> IO ()
 dump = mapM_ (Prelude.putStrLn . hex)
@@ -20,4 +19,3 @@ main = do
   fn <- jit mem asmProg
   res <- fn
   putStrLn $ "Result:" <> show res
-
