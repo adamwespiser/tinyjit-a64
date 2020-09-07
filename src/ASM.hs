@@ -1,3 +1,5 @@
+{-# Language BinaryLiterals #-}
+
 {-| Description: ASM representation of A64 ARM assembly
 
 A64 is a fixed width encoding, but the location of various operands varies by
@@ -13,6 +15,9 @@ A "good representation" for this problem stradles between the following:
 module ASM where
 import Data.Word
 import Data.Bits
+import Data.Maybe
+
+import Numeric (showHex)
 
 data Reg --arguments and retun values
  = X0 | X1 | X2 | X3 | X4 | X5 | X6 | X7
@@ -21,9 +26,9 @@ data Reg --arguments and retun values
  -- calle-saved registers
  | X19  | X20 | X21 | X22 | X23 | X24 | X25 | X26 | X27 | X28
  -- frame pointer
- | X29
+ | FP
  -- stack pointer
- | X30
+ | SP
  deriving (Eq, Show, Enum)
 
 -- Not sure if this is a good idea, in ARM Imm and Reg values are
@@ -88,10 +93,24 @@ zero32 = fromInteger 0
 --   of the few known patterns here.
 --   Note: Instruction size is 32bit for 32/64bit reg size
 encode :: Instr -> Word32
-encode (RET Nothing) = 0xD65F0000 -- we can probably replace this "magic  number"
-                                  -- with a smaller magic number, on per instruction type
-encode (RET (Just reg)) = 0xD65F0000
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ reg ) `shiftL` 5)
+encode (RET reg) = ((0b1101011001011111 :: Word32) `shiftL` 16)
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ fromMaybe X0 reg ) `shiftL` 5)
+encode (MOVK movk imm16 reg) = zero32
+  .|. (0b1 `shiftL` 31) -- 64 bit mode
+  .|. (0b11100101 `shiftL` 23)  -- opc + data magic bits
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ movk) `shiftL` 21)
+  .|. (fromIntegral $ imm16 `shiftL` 5)
+  .|. (fromIntegral @Int @Word32 . fromEnum $ reg)
 encode (NOP) = 0xD503201F
 encode _ = zero32
+
+-- | Instructions are in little-endian
+toByteArray :: Word32 -> [Word8]
+--toByteArray instr = fmap (fromInteger . toInteger . shiftFn) [24,16,8,0]
+toByteArray instr = fmap (fromInteger . toInteger . shiftFn) [0,8,16,24] -- [24,16,8,0]
+  where
+   shiftFn shift = ((0xff `shiftL` shift) .&. instr) `shiftR` shift
+
+hex :: (Integral a, Show a) => a -> String
+hex x = showHex x ""
 

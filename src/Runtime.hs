@@ -2,6 +2,8 @@
 
 module Runtime where
 
+import ASM
+
 import Control.Exception
 import Data.Bits
 import Data.Dynamic
@@ -79,7 +81,7 @@ heapPtr :: Ptr a -> Word32
 heapPtr = fromIntegral . ptrToIntPtr
 
 -- ARM a64 has 32bit fixed width instructions
-codePtr :: [Word32] -> IO (VM.IOVector Word32)
+codePtr :: [Word8] -> IO (VM.IOVector Word8)
 codePtr = V.thaw . V.fromList
 
 vecPtr :: VM.Storable a => VM.MVector s a -> ForeignPtr a
@@ -90,18 +92,18 @@ asciz str = do
   ptr <- newCString $ str ++ "\n"
   return . heapPtr $ ptr
 
-
-jit :: Ptr Word32 -> [Word32] -> IO (IO Int)
+jit :: Ptr Word8 -> [Word32] -> IO (IO Int)
 jit mem machCode = do
-  code <- codePtr machCode
+  let machCodeBytes = concat $ fmap toByteArray machCode
+  code <- codePtr machCodeBytes
   withForeignPtr (vecPtr code) $ \ptr -> do
-    copyBytes mem ptr (32 * 6) -- what's the "6" represent here? s.d. used (8*6)
+    copyBytes mem ptr (8 * 6) -- what's the "6" represent here? s.d. used (8*6)
   return $ getFunction mem
 
 foreign import ccall "dynamic"
   mkFun :: FunPtr (IO Int) -> IO Int
 
-getFunction :: Ptr Word32 -> IO Int
+getFunction :: Ptr Word8 -> IO Int
 getFunction mem = do
  let fptr = unsafeCoerce mem :: FunPtr (IO Int)
  mkFun fptr
