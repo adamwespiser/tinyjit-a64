@@ -39,7 +39,7 @@ mmapPrivate = MmapOption 0x02
 allocateMemory :: CSize -> IO (Ptr Word8)
 allocateMemory size = mmap nullPtr size pflags mflags (-1) 0
   where
-    pflags = (ProtOption 0x04) .|. (ProtOption 0x02) -- r/w
+    pflags = (ProtOption 0x04) .|. (ProtOption 0x02) .|. (ProtOption 0x01) -- r/w
     mflags = (MmapOption 0x20) .|. (MmapOption 0x02) -- Anon | Private
 
 data MmapException = MmapException
@@ -97,7 +97,7 @@ jit mem machCode = do
   let machCodeBytes = concat $ fmap toByteArray machCode
   code <- codePtr machCodeBytes
   withForeignPtr (vecPtr code) $ \ptr -> do
-    copyBytes mem ptr (8 * 6) -- what's the "6" represent here? s.d. used (8*6)
+    copyBytes mem ptr $ (length machCodeBytes) * 8 -- what's the "6" represent here? s.d. used (8*6)
   return $ getFunction mem
 
 foreign import ccall "dynamic"

@@ -27,7 +27,7 @@ data Reg --arguments and retun values
  | X19  | X20 | X21 | X22 | X23 | X24 | X25 | X26 | X27 | X28
  -- frame pointer
  | FP
- -- stack pointer
+ -- stack pointer, default return
  | SP
  deriving (Eq, Show, Enum)
 
@@ -77,13 +77,13 @@ data Instr
   = STR Reg Reg Offset
   | LDR Reg Reg Offset
   | MOV Reg Reg
-  | MOVK MovK Word16 Reg --move/shift
+  | MOVI MovK Word16 Reg --move/shift
   | RET (Maybe Reg)
   | SVC Word16 --supervisor/system call
   | SYS --system call
   | Br -- branch
   | NOP
-  | ADD Reg Reg
+  | ADD Reg Reg Reg
 
 zero32 :: Word32
 zero32 = fromInteger 0
@@ -94,19 +94,25 @@ zero32 = fromInteger 0
 --   Note: Instruction size is 32bit for 32/64bit reg size
 encode :: Instr -> Word32
 encode (RET reg) = ((0b1101011001011111 :: Word32) `shiftL` 16)
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ fromMaybe X0 reg ) `shiftL` 5)
-encode (MOVK movk imm16 reg) = zero32
-  .|. (0b1 `shiftL` 31) -- 64 bit mode
-  .|. (0b11100101 `shiftL` 23)  -- opc + data magic bits
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ movk) `shiftL` 21)
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ fromMaybe SP reg ) `shiftL` 5)
+encode (MOVI movk imm16 reg) = zero32
+  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (0b10100101 `shiftL` 23)  -- opc + data magic bits
   .|. (fromIntegral $ imm16 `shiftL` 5)
   .|. (fromIntegral @Int @Word32 . fromEnum $ reg)
 encode (NOP) = 0xD503201F
+-- ADD target = src + src, impl
+-- Ignoring "option" and "imm3" for now...
+encode (ADD trg src1 src2) = zero32
+  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (0b01011001 `shiftL` 21)
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ src1) `shiftL` 16)
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ src2) `shiftL` 5)
+  .|. (fromIntegral  @Int @Word32 . fromEnum $ trg)
 encode _ = zero32
 
 -- | Instructions are in little-endian
 toByteArray :: Word32 -> [Word8]
---toByteArray instr = fmap (fromInteger . toInteger . shiftFn) [24,16,8,0]
 toByteArray instr = fmap (fromInteger . toInteger . shiftFn) [0,8,16,24] -- [24,16,8,0]
   where
    shiftFn shift = ((0xff `shiftL` shift) .&. instr) `shiftR` shift
