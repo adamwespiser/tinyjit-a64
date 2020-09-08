@@ -40,6 +40,13 @@ data SubHeadingField
   | Variant64Bit
   deriving (Eq, Show, Enum)
 
+
+data CarryFlag
+  = NoCarry
+  | Carry
+  deriving (Eq, Show, Enum)
+
+
 data ConditionFlag
   = EQ -- 0000 -- equal
   | NE -- 0001 -- not equal
@@ -80,9 +87,11 @@ data Instr
   | RET (Maybe Reg)
   | SVC Word16 --supervisor/system call
   | SYS --system call
-  | Br -- branch
+  | B Int -- branch, relative offset, Word32 ~ (+/-) * 4 * Instructions to jump
+  | BCOND ConditionFlag Int
   | NOP
-  | ADD Reg Reg Reg
+  | ADD CarryFlag Reg Reg Reg
+  | SUB CarryFlag Reg Reg Reg
 
 zero32 :: Word32
 zero32 = fromInteger 0
@@ -92,6 +101,18 @@ zero32 = fromInteger 0
 --   of the few known patterns here.
 --   Note: Instruction size is 32bit for 32/64bit reg size
 encode :: Instr -> Word32
+encode (BCOND condFlag offset) 
+  | offset > 0 = 
+         ((0b01010100 :: Word32) `shiftL` 24)
+    .|. (((fromIntegral @Int @Word32 $ offset) .&. 0x7FFFF) `shiftL` 5) -- first 19 bits
+    .|. (fromIntegral @Int @Word32 . fromEnum $ offset)
+  | otherwise =
+         ((0b01010100 :: Word32) `shiftL` 24)
+    .|. ((fromIntegral @Int @Word32  (offset .&. 0x7FFFF)) `shiftL` 5) -- first 19 bits
+    .|. (fromIntegral @Int @Word32 . fromEnum $ offset)
+encode (B offset) = 
+       ((0b00101  :: Word32) `shiftL` 26)
+  .|. ((fromIntegral @Int @Word32 $ offset) .&. 0x1FFFFFF) -- first 25 bits
 encode (RET reg) = ((0b1101011001011111 :: Word32) `shiftL` 16)
   .|. ((fromIntegral @Int @Word32 . fromEnum $ fromMaybe SP reg ) `shiftL` 5)
 encode (MOVI movk imm16 reg) = zero32
@@ -99,15 +120,23 @@ encode (MOVI movk imm16 reg) = zero32
   .|. (0b10100101 `shiftL` 23)  -- opc + data magic bits
   .|. (fromIntegral $ imm16 `shiftL` 5)
   .|. (fromIntegral @Int @Word32 . fromEnum $ reg)
-encode (NOP) = 0xD503201F
--- ADD target = src + src, impl
--- Ignoring "option" and "imm3" for now...
-encode (ADD trg src1 src2) = zero32
+encode (ADD carryFlag trg src1 src2) = zero32 -- ADD target = src + src, impl
   .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ carryFlag) `shiftL` 29)
   .|. (0b01011001 `shiftL` 21)
   .|. ((fromIntegral @Int @Word32 . fromEnum $ src1) `shiftL` 16)
   .|. ((fromIntegral @Int @Word32 . fromEnum $ src2) `shiftL` 5)
   .|. (fromIntegral  @Int @Word32 . fromEnum $ trg)
+encode (SUB carryFlag trg src1 src2) = zero32
+  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ carryFlag) `shiftL` 29)
+  .|. (0b1001011001 `shiftL` 21)
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ src1) `shiftL` 16)
+  .|. ((fromIntegral @Int @Word32 . fromEnum $ src2) `shiftL` 5)
+  .|. (fromIntegral  @Int @Word32 . fromEnum $ trg)
+
+
+encode (NOP) = 0xD503201F
 encode _ = zero32
 
 -- | Instructions are in little-endian

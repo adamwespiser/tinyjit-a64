@@ -1,5 +1,8 @@
 module Main where
 
+
+import Prelude hiding (LT)
+
 import ASM
 import Runtime (allocateMemory, jit)
 
@@ -16,9 +19,12 @@ asmProg = fmap encode prog1
 -- asmProg = return1Function01
 
 prog1 = 
-  [ MOVI Mk0 (17::Word16) X12
-  , MOVI Mk0 (3::Word16) X13
-  , ADD X0 X12 X13
+  [ MOVI Mk0 (10::Word16) X12
+  , MOVI Mk0 (1::Word16) X13
+  , MOVI Mk0 (1::Word16) X14
+  , ADD NoCarry X0 X13 X14
+  , SUB Carry X15 X0 X12
+  , BCOND LE (-2)
   , RET Nothing
   ]
 
