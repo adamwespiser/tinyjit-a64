@@ -1,9 +1,9 @@
 module Main where
 
 import ASM
-import Runtime
+import Runtime (allocateMemory, jit)
 
-import Data.Word
+import Data.Word (Word32)
 import Control.Concurrent (threadDelay)
 
 dump :: [Word32] -> IO ()
@@ -51,4 +51,3 @@ main = do
   res <- fn
   -- print "run asm function"
   putStrLn $ "Result:" <> show res
-
