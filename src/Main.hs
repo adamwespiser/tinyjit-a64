@@ -3,7 +3,7 @@ module Main where
 import ASM
 import Runtime (allocateMemory, jit)
 
-import Data.Word (Word32)
+import Data.Word (Word32, Word16)
 import Control.Concurrent (threadDelay)
 
 dump :: [Word32] -> IO ()
