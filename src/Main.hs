@@ -1,7 +1,7 @@
 module Main where
 
 
-import Prelude hiding (LT)
+import Prelude hiding (LT, EQ, GT)
 
 import ASM
 import Runtime (allocateMemory, jit)
@@ -19,12 +19,14 @@ asmProg = fmap encode prog1
 -- asmProg = return1Function01
 
 prog1 = 
-  [ MOVI Mk0 (10::Word16) X12
-  , MOVI Mk0 (1::Word16) X13
-  , MOVI Mk0 (1::Word16) X14
+  [ MOVI Mk0 (10::Int) X12
+  , MOVI Mk0 (1::Int) X13
+  , MOVI Mk0 (1::Int) X14
+  , NOP
   , ADD NoCarry X0 X13 X14
-  , SUB Carry X15 X0 X12
-  , BCOND LE (-2)
+  , CMPI X0 10
+  , BCOND LT 2 --branch if (cmp reg imm) reg is LT imm
+  , B (-4)
   , RET Nothing
   ]
 

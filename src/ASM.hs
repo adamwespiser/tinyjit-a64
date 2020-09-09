@@ -40,18 +40,17 @@ data SubHeadingField
   | Variant64Bit
   deriving (Eq, Show, Enum)
 
-
 data CarryFlag
   = NoCarry
   | Carry
   deriving (Eq, Show, Enum)
-
 
 data ConditionFlag
   = EQ -- 0000 -- equal
   | NE -- 0001 -- not equal
   | CS -- 0010 -- carry set
   | CC -- 0011 -- carry clear
+  | MI -- 0100 -- minus, negative
   | PL -- 0101 -- plus, positive or zero
   | VS -- 0110 -- overflow
   | VC -- 0111 -- no overflow
@@ -63,6 +62,7 @@ data ConditionFlag
   | LE -- 1101 -- signed less than or equal
   | AL -- 1110 - -always
   | NV -- 1111 -- always
+  deriving (Eq, Show, Enum)
 
 -- Table C4-1 Main encoding table of A64 Instruction set
 data Op0
@@ -83,7 +83,7 @@ data Instr
   = STR Reg Reg Offset
   | LDR Reg Reg Offset
   | MOV Reg Reg
-  | MOVI MovK Word16 Reg --move/shift
+  | MOVI MovK Int Reg --move/shift
   | RET (Maybe Reg)
   | SVC Word16 --supervisor/system call
   | SYS --system call
@@ -92,6 +92,7 @@ data Instr
   | NOP
   | ADD CarryFlag Reg Reg Reg
   | SUB CarryFlag Reg Reg Reg
+  | CMPI Reg Int
 
 zero32 :: Word32
 zero32 = fromInteger 0
@@ -103,41 +104,57 @@ zero32 = fromInteger 0
 encode :: Instr -> Word32
 encode (BCOND condFlag offset) 
   | offset > 0 = 
-         ((0b01010100 :: Word32) `shiftL` 24)
-    .|. (((fromIntegral @Int @Word32 $ offset) .&. 0x7FFFF) `shiftL` 5) -- first 19 bits
-    .|. (fromIntegral @Int @Word32 . fromEnum $ offset)
+      ((0b01010100 :: Word32) `shiftL` 24)
+  .|. ((codeTag offset .&. 0x7FFFF) `shiftL` 5) -- first 19 bits
+  .|. (codeTag condFlag)
   | otherwise =
-         ((0b01010100 :: Word32) `shiftL` 24)
-    .|. ((fromIntegral @Int @Word32  (offset .&. 0x7FFFF)) `shiftL` 5) -- first 19 bits
-    .|. (fromIntegral @Int @Word32 . fromEnum $ offset)
-encode (B offset) = 
-       ((0b00101  :: Word32) `shiftL` 26)
-  .|. ((fromIntegral @Int @Word32 $ offset) .&. 0x1FFFFFF) -- first 25 bits
-encode (RET reg) = ((0b1101011001011111 :: Word32) `shiftL` 16)
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ fromMaybe SP reg ) `shiftL` 5)
+      ((0b01010100 :: Word32) `shiftL` 24)
+  .|. (clampShift offset 19 5)
+  .|. (codeTag condFlag)
+encode (CMPI reg imm12) = zero32
+  .|. ((0b01110001 :: Word32) `shiftL` 24)
+  .|. (clampShift imm12 19 5)
+  .|. (codeTag reg `shiftL` 5)
+  .|. (createMask 5)
+encode (B imm26) = zero32
+  .|. ((0b00101 :: Word32) `shiftL` 26)
+  .|. (clampShift imm26 26 0)
+encode (RET reg) = zero32
+  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. ((0b1101011001011111 :: Word32) `shiftL` 16)
+  .|. ((codeTag $ fromMaybe SP reg ) `shiftL` 5)
 encode (MOVI movk imm16 reg) = zero32
   .|. (0b0 `shiftL` 31) -- 32 bit mode
   .|. (0b10100101 `shiftL` 23)  -- opc + data magic bits
-  .|. (fromIntegral $ imm16 `shiftL` 5)
-  .|. (fromIntegral @Int @Word32 . fromEnum $ reg)
+  .|. (clampShift imm16 16 5)
+  .|. (codeTag reg)
 encode (ADD carryFlag trg src1 src2) = zero32 -- ADD target = src + src, impl
   .|. (0b0 `shiftL` 31) -- 32 bit mode
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ carryFlag) `shiftL` 29)
+  .|. (codeTag carryFlag `shiftL` 29)
   .|. (0b01011001 `shiftL` 21)
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ src1) `shiftL` 16)
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ src2) `shiftL` 5)
-  .|. (fromIntegral  @Int @Word32 . fromEnum $ trg)
+  .|. (codeTag src1 `shiftL` 16)
+  .|. (codeTag src2 `shiftL` 5)
+  .|. (codeTag trg)
 encode (SUB carryFlag trg src1 src2) = zero32
   .|. (0b0 `shiftL` 31) -- 32 bit mode
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ carryFlag) `shiftL` 29)
+  .|. (codeTag carryFlag `shiftL` 29)
   .|. (0b1001011001 `shiftL` 21)
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ src1) `shiftL` 16)
-  .|. ((fromIntegral @Int @Word32 . fromEnum $ src2) `shiftL` 5)
-  .|. (fromIntegral  @Int @Word32 . fromEnum $ trg)
-
-
+  .|. (codeTag src1 `shiftL` 16)
+  .|. (codeTag src2 `shiftL` 5)
+  .|. (codeTag trg)
 encode (NOP) = 0xD503201F
 encode _ = zero32
+
+codeTag :: Enum a => a -> Word32
+codeTag = fromIntegral . fromEnum
+
+
+-- | maskLen must be g.t. 0 or else bad things happen
+clampShift :: Int -> Int -> Int -> Word32
+clampShift inp maskLen shift = ((fromInteger . toInteger $ inp) .&. (createMask maskLen)) `shiftL` shift
+
+createMask :: Int -> Word32
+createMask n = foldl1 (.|.) $ fmap bit [0..(n-1)]
 
 -- | Instructions are in little-endian
 toByteArray :: Word32 -> [Word8]
