@@ -113,7 +113,7 @@ encode (BCOND condFlag offset)
   .|. (codeTag condFlag)
 encode (CMPI reg imm12) = zero32
   .|. ((0b01110001 :: Word32) `shiftL` 24)
-  .|. (clampShift imm12 19 5)
+  .|. (clampShift imm12 12 10)
   .|. (codeTag reg `shiftL` 5)
   .|. (createMask 5)
 encode (B imm26) = zero32

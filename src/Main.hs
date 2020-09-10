@@ -13,20 +13,17 @@ dump :: [Word32] -> IO ()
 dump = mapM_ (Prelude.putStrLn . hex)
 
 asmProg :: [Word32]
-asmProg = fmap encode prog1
+asmProg = fmap encode prog_loop
 -- asmProg = fmap encode $ [MOVI Mk0 (17::Word16) X0, RET Nothing]
 -- asmProg = fmap encode [RET Nothing]
 -- asmProg = return1Function01
 
-prog1 = 
-  [ MOVI Mk0 (10::Int) X12
-  , MOVI Mk0 (1::Int) X13
-  , MOVI Mk0 (1::Int) X14
-  , NOP
-  , ADD NoCarry X0 X13 X14
-  , CMPI X0 10
-  , BCOND LT 2 --branch if (cmp reg imm) reg is LT imm
-  , B (-4)
+prog_loop = 
+  [ MOVI Mk0 (1::Int) X0
+  , MOVI Mk0 (1::Int) X11
+  , ADD NoCarry X0 X0 X11
+  , CMPI X0 41
+  , BCOND LE (-2) --branch if (cmp reg imm) reg is LT imm
   , RET Nothing
   ]
 
