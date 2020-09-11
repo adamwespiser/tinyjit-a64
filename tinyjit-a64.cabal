@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: af93fafd085274e8a312d785f72ebf1996fac06276028b8d2732478158f52910
+-- hash: a65ed92483030f34bbc85f0c89a5ce4f68579e7613a1ba331363569d2f5c7a2d
 
 name:           tinyjit-a64
 version:        0.1.0.0
@@ -37,6 +37,7 @@ executable tinyjit-a64-exe
   ghc-options: -rtsopts -g -dcore-lint -debug
   build-depends:
       base >=4.7 && <5
+    , transformers
     , unix
     , vector
   default-language: Haskell2010

@@ -2,8 +2,6 @@
 
 module Runtime where
 
-import ASM
-
 import Control.Exception
 import Data.Bits
 import Data.Dynamic
@@ -97,8 +95,15 @@ jit mem machCode = do
   let machCodeBytes = concat $ fmap toByteArray machCode
   code <- codePtr machCodeBytes
   withForeignPtr (vecPtr code) $ \ptr -> do
-    copyBytes mem ptr $ (length machCodeBytes) * 8 -- what's the "6" represent here? s.d. used (8*6)
+    copyBytes mem ptr $ (length machCodeBytes)*8 -- what's the "6" represent here? s.d. used (8*6)
   return $ getFunction mem
+
+-- | Instructions are in little-endian
+toByteArray :: Word32 -> [Word8]
+toByteArray instr = fmap (fromInteger . toInteger . shiftFn) [0,8,16,24] -- [24,16,8,0]
+  where
+    shiftFn shift = ((0xff `shiftL` shift) .&. instr) `shiftR` shift
+
 
 foreign import ccall "dynamic"
   mkFun :: FunPtr (IO Int) -> IO Int

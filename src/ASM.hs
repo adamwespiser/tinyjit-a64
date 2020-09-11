@@ -12,11 +12,21 @@
 -- 1. is pretty much the ASM type, and 2 is the encode function
 module ASM where
 
+import Runtime
+
 import Data.Bits
--- (
 import Data.Maybe (fromMaybe)
 import Data.Word (Word16, Word32, Word8)
 import Numeric (showHex)
+import Data.Maybe (fromJust)
+import Data.Tuple (swap)
+
+import Foreign.Ptr
+
+
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.State
+import Control.Monad.Trans.Except
 
 data Reg --arguments and retun values
  = X0 | X1 | X2 | X3 | X4 | X5 | X6 | X7
@@ -24,11 +34,17 @@ data Reg --arguments and retun values
  | X8 | X9 | X10 | X11 | X12 | X13 | X14 | X15 | X16 | X17 | X18
  -- calle-saved registers
  | X19  | X20 | X21 | X22 | X23 | X24 | X25 | X26 | X27 | X28
- -- frame pointer
+ -- frame pointer (x29)
  | FP
- -- stack pointer, default return
+ -- procedure link register (x30)
+ | LR
+ -- stack pointer (x31)
  | SP
  deriving (Eq, Show, Enum)
+
+-- zr is the Zero Register, which shares the same encoding as the stack pointer (x31)
+zr :: Reg
+zr = SP
 
 -- Not sure if this is a good idea, in ARM Imm and Reg values are
 -- not exchangable like they are in x86
@@ -44,6 +60,18 @@ data CarryFlag
   = NoCarry
   | Carry
   deriving (Eq, Show, Enum)
+
+-- | Offset is used in load/store for incrementing register memory addresses
+data Offset
+  = NoOffset    -- [r1, #16]
+  | PostIndex   -- [r1], $16
+  | PreIndex    -- [r1, $15]!
+  deriving (Eq, Show)
+
+instance Enum Offset where
+    fromEnum = fromJust . flip lookup postIndexTable
+    toEnum = fromJust . flip lookup (map swap postIndexTable)
+postIndexTable = [(NoOffset, 0), (PostIndex, 1), (PreIndex, 4)]
 
 data ConditionFlag
   = EQ -- 0000 -- equal
@@ -75,24 +103,22 @@ data Op0
   | DataProcReg -- x101
   | DataProcScalar -- x111
 
-type Offset = Word8 -- number of Bytes offset
-
 data MovK = Mk0 | Mk16 | Mk32 | Mk48 deriving (Show, Eq, Enum)
 
 data Instr
-  = STR Reg Reg Offset
-  | LDR Reg Reg Offset
+  = STR Offset Reg Reg Int
+  | LDR Offset Reg Reg Int
   | MOV Reg Reg
   | MOVI MovK Int Reg --move/shift
   | RET (Maybe Reg)
   | SVC Word16 --supervisor/system call
-  | SYS --system call
   | B Int -- branch, relative offset, Word32 ~ (+/-) * 4 * Instructions to jump
   | BCOND ConditionFlag Int
   | NOP
   | ADD CarryFlag Reg Reg Reg
   | SUB CarryFlag Reg Reg Reg
   | CMPI Reg Int
+  deriving(Eq, Show)
 
 zero32 :: Word32
 zero32 = fromInteger 0
@@ -102,14 +128,40 @@ zero32 = fromInteger 0
 --   of the few known patterns here.
 --   Note: Instruction size is 32bit for 32/64bit reg size
 encode :: Instr -> Word32
-encode (BCOND condFlag offset) 
-  | offset > 0 = 
+encode (STR NoOffset regN regT imm12) = zero32
+  .|. ((0b1011100100 :: Word32) `shiftL` 22)
+  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (clampShift imm12 12 10)
+  .|. (codeTag regN `shiftL` 5)
+  .|. (codeTag regT)
+encode (STR postIndex regN regT imm9) = zero32 -- postIndex in [PreIndex, PostIndex]
+  .|. ((0b10111000000 :: Word32) `shiftL` 21)
+  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (clampShift imm9 9 12)
+  .|. (codeTag postIndex `shiftL` 10)
+  .|. (codeTag regN `shiftL` 5)
+  .|. (codeTag regT)
+encode (LDR NoOffset regN regT imm12) = zero32
+  .|. ((0b1011110101 :: Word32) `shiftL` 22)
+  .|. (0b0 `shiftL` 30) -- 32 bit mode
+  .|. (clampShift imm12 12 10)
+  .|. (codeTag regN `shiftL` 5)
+  .|. (codeTag regT)
+encode (LDR postIndex regN regT imm9) = zero32
+  .|. ((0b10111100010 :: Word32) `shiftL` 21)
+  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (clampShift imm9 9 12)
+  .|. (codeTag postIndex `shiftL` 10)
+  .|. (codeTag regN `shiftL` 5)
+  .|. (codeTag regT)
+encode (BCOND condFlag imm19)
+  | imm19> 0 = 
       ((0b01010100 :: Word32) `shiftL` 24)
-  .|. ((codeTag offset .&. 0x7FFFF) `shiftL` 5) -- first 19 bits
+  .|. (clampShift imm19 19 5)
   .|. (codeTag condFlag)
   | otherwise =
       ((0b01010100 :: Word32) `shiftL` 24)
-  .|. (clampShift offset 19 5)
+  .|. (clampShift imm19 19 5)
   .|. (codeTag condFlag)
 encode (CMPI reg imm12) = zero32
   .|. ((0b01110001 :: Word32) `shiftL` 24)
@@ -122,7 +174,7 @@ encode (B imm26) = zero32
 encode (RET reg) = zero32
   .|. (0b0 `shiftL` 31) -- 32 bit mode
   .|. ((0b1101011001011111 :: Word32) `shiftL` 16)
-  .|. ((codeTag $ fromMaybe SP reg ) `shiftL` 5)
+  .|. ((codeTag $ fromMaybe LR reg ) `shiftL` 5)
 encode (MOVI movk imm16 reg) = zero32
   .|. (0b0 `shiftL` 31) -- 32 bit mode
   .|. (0b10100101 `shiftL` 23)  -- opc + data magic bits
@@ -156,11 +208,36 @@ clampShift inp maskLen shift = ((fromInteger . toInteger $ inp) .&. (createMask 
 createMask :: Int -> Word32
 createMask n = foldl1 (.|.) $ fmap bit [0..(n-1)]
 
--- | Instructions are in little-endian
-toByteArray :: Word32 -> [Word8]
-toByteArray instr = fmap (fromInteger . toInteger . shiftFn) [0,8,16,24] -- [24,16,8,0]
-  where
-    shiftFn shift = ((0xff `shiftL` shift) .&. instr) `shiftR` shift
-
 hex :: (Integral a, Show a) => a -> String
 hex x = showHex x ""
+
+-- Define our monad, ASM
+data JITMem = JITMem
+ { instr :: [Instr]
+ , mach   :: [Word32]
+ , memptr :: Word32
+ , memoff :: Word32
+ } deriving (Eq, Show)
+
+initState :: Word32 -> JITMem
+initState start = JITMem
+  { instr = []
+  , mach   = []
+  , memptr = start
+  , memoff = 0
+  }
+
+type ASM a = StateT JITMem (Except String) a
+
+emit :: Instr -> ASM ()
+emit i = modify $ \s -> s
+  { mach = (mach s) ++ [encode i]
+  , memoff = memoff s + 1
+  , instr  = (instr s) ++ [i]
+  }
+
+assemble :: Ptr a -> ASM b -> Either String JITMem
+assemble start asm = runExcept $ execStateT asm (initState ptr)
+  where
+    ptr = heapPtr start
+

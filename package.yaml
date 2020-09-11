@@ -17,6 +17,7 @@ default-extensions:
 dependencies:
 - base >= 4.7 && < 5
 - unix
+- transformers
 - vector
 
 executables:
