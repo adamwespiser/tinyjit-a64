@@ -63,15 +63,27 @@ data CarryFlag
 
 -- | Offset is used in load/store for incrementing register memory addresses
 data Offset
-  = NoOffset    -- [r1, #16]
-  | PostIndex   -- [r1], $16
-  | PreIndex    -- [r1, $15]!
+  = NoOffset     -- [r1, #16]
+  | PostIndex    -- [r1], #16
+  | PreIndex     -- [r1, #35]!
   deriving (Eq, Show)
 
 instance Enum Offset where
     fromEnum = fromJust . flip lookup postIndexTable
     toEnum = fromJust . flip lookup (map swap postIndexTable)
 postIndexTable = [(NoOffset, 0), (PostIndex, 1), (PreIndex, 4)]
+
+data PairOffset
+  = PPostIndex    -- [r1], #16
+  | PSignedOffset -- [r1, #-16]
+  | PPreIndex     -- [r1, #35]!
+  deriving (Eq, Show)
+
+instance Enum PairOffset where
+    fromEnum = fromJust . flip lookup pairPostIndexTable
+    toEnum = fromJust . flip lookup (map swap pairPostIndexTable)
+pairPostIndexTable = [(PPostIndex, 1), (PSignedOffset, 2), (PPreIndex, 3)]
+
 
 data ConditionFlag
   = EQ -- 0000 -- equal
@@ -106,8 +118,10 @@ data Op0
 data MovK = Mk0 | Mk16 | Mk32 | Mk48 deriving (Show, Eq, Enum)
 
 data Instr
-  = STR Offset Reg Reg Int
-  | LDR Offset Reg Reg Int
+  = STR Offset Reg Reg Int -- offset=signed not supported
+  | STP PairOffset Reg Reg Reg Int 
+  | LDR Offset Reg Reg Int -- Offset Signed Not Supported
+  | LDP PairOffset Reg Reg Reg Int 
   | MOV Reg Reg
   | MOVI MovK Int Reg --move/shift
   | RET (Maybe Reg)
@@ -128,6 +142,24 @@ zero32 = fromInteger 0
 --   of the few known patterns here.
 --   Note: Instruction size is 32bit for 32/64bit reg size
 encode :: Instr -> Word32
+encode (STP index regN regT regT2 imm7) = zero32
+  .|. (0b1 `shiftL` 31) -- 32 bit mode
+  .|. ((0b00101 :: Word32) `shiftL` 27)
+  .|. (codeTag index `shiftL` 23)
+  .|. (clampShift imm7 7 15)
+  .|. (codeTag regT2 `shiftL` 10)
+  .|. (codeTag regN `shiftL` 5)
+  .|. (codeTag regT)
+{- LDP = STP & set bit 21 -}
+encode (LDP index regN regT regT2 imm7) = zero32
+  .|. (0b1 `shiftL` 31) -- 32 bit mode
+  .|. ((0b00101 :: Word32) `shiftL` 27)
+  .|. (codeTag index `shiftL` 23)
+  .|. (0b1 `shiftL` 22) -- set the 'L' bit
+  .|. (clampShift imm7 7 15)
+  .|. (codeTag regT2 `shiftL` 10)
+  .|. (codeTag regN `shiftL` 5)
+  .|. (codeTag regT)
 encode (STR NoOffset regN regT imm12) = zero32
   .|. ((0b1011100100 :: Word32) `shiftL` 22)
   .|. (0b0 `shiftL` 31) -- 32 bit mode

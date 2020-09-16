@@ -11,13 +11,17 @@ import Control.Concurrent (threadDelay)
 dump :: (Integral a, Show a) => [a] -> IO ()
 dump = mapM_ (Prelude.putStrLn . hex)
 
+
+
 loopProgram :: ASM ()
 loopProgram = do
+  emit $ STP PPreIndex SP FP LR (-32)
   emit $ MOVI Mk0 1 X0
   emit $ MOVI Mk0 1 X11
   emit $ ADD NoCarry X0 X0 X11
   emit $ CMPI X0 41
   emit $ BCOND LE (-2)
+  emit $ LDP PPostIndex SP FP LR 32
   emit $ RET Nothing
 
 return1Function01 :: [Word32]
