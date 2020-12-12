@@ -38,6 +38,7 @@ allocateMemory :: CSize -> IO (Ptr Word8)
 allocateMemory size = mmap nullPtr size pflags mflags (-1) 0
   where
     pflags = (ProtOption 0x04) .|. (ProtOption 0x02) .|. (ProtOption 0x01) -- r/w
+    -- pflags = (ProtOption 0x02) .|. (ProtOption 0x01) -- r/w
     mflags = (MmapOption 0x20) .|. (MmapOption 0x02) -- Anon | Private
 
 data MmapException = MmapException
@@ -73,6 +74,7 @@ mmap addr csize protOpt mmapOpt fd coff = do
 extern :: String -> IO Word32
 extern name = do
   dl <- dlopen "" [RTLD_LAZY, RTLD_GLOBAL]
+  -- dl <- dlopen "" [RTLD_NOW, RTLD_GLOBAL]
   dlsym dl name <&> heapPtr . castFunPtrToPtr
 
 heapPtr :: Ptr a -> Word32
@@ -96,14 +98,13 @@ jit mem machCode = do
   code <- codePtr machCodeBytes
   withForeignPtr (vecPtr code) $ \ptr -> do
     copyBytes mem ptr $ (length machCodeBytes)*8 -- what's the "6" represent here? s.d. used (8*6)
-  return $ getFunction mem
+  pure $ getFunction mem
 
 -- | Instructions are in little-endian
 toByteArray :: Word32 -> [Word8]
 toByteArray instr = fmap (fromInteger . toInteger . shiftFn) [0,8,16,24] -- [24,16,8,0]
   where
     shiftFn shift = ((0xff `shiftL` shift) .&. instr) `shiftR` shift
-
 
 foreign import ccall "dynamic"
   mkFun :: FunPtr (IO Int) -> IO Int

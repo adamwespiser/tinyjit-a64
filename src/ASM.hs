@@ -1,7 +1,8 @@
-{-# LANGUAGE BinaryLiterals #-}
+{-# LANGUAGE BinaryLiterals,NumericUnderscores #-}
 
 -- | Description: ASM representation of A64 ARM assembly
 --
+{- ARM_a64_instruction_set_architecture.pdf -}
 -- A64 is a fixed width encoding, but the location of various operands varies by
 -- the type of the instruction.
 --
@@ -115,6 +116,7 @@ data Op0
   | DataProcReg -- x101
   | DataProcScalar -- x111
 
+data KeepBits = ClearBits | KeepBits deriving (Show, Eq, Enum)
 data MovK = Mk0 | Mk16 | Mk32 | Mk48 deriving (Show, Eq, Enum)
 
 data Instr
@@ -122,11 +124,14 @@ data Instr
   | STP PairOffset Reg Reg Reg Int 
   | LDR Offset Reg Reg Int -- Offset Signed Not Supported
   | LDP PairOffset Reg Reg Reg Int 
-  | MOV Reg Reg
-  | MOVI MovK Int Reg --move/shift
+  | MOV KeepBits MovK Reg Word16 --move/shift (KeepBits, True=MovK
+  | MOV_reg Reg Reg
   | RET (Maybe Reg)
   | SVC Word16 --supervisor/system call
   | B Int -- branch, relative offset, Word32 ~ (+/-) * 4 * Instructions to jump
+  | BL Int
+  | BLR Reg
+  | BR Reg
   | BCOND ConditionFlag Int
   | NOP
   | ADD CarryFlag Reg Reg Reg
@@ -137,13 +142,16 @@ data Instr
 zero32 :: Word32
 zero32 = fromInteger 0
 
+bitMode :: Integral a => a
+bitMode = 0b1 {-0b0 for 32, 0b1 for 64-}
+
 -- | Lets just try something simple to get started
 --   then once we get an idea for the pattern, we can use one
 --   of the few known patterns here.
 --   Note: Instruction size is 32bit for 32/64bit reg size
 encode :: Instr -> Word32
 encode (STP index regN regT regT2 imm7) = zero32
-  .|. (0b1 `shiftL` 31) -- 32 bit mode
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. ((0b00101 :: Word32) `shiftL` 27)
   .|. (codeTag index `shiftL` 23)
   .|. (clampShift imm7 7 15)
@@ -152,7 +160,7 @@ encode (STP index regN regT regT2 imm7) = zero32
   .|. (codeTag regT)
 {- LDP = STP & set bit 21 -}
 encode (LDP index regN regT regT2 imm7) = zero32
-  .|. (0b1 `shiftL` 31) -- 32 bit mode
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. ((0b00101 :: Word32) `shiftL` 27)
   .|. (codeTag index `shiftL` 23)
   .|. (0b1 `shiftL` 22) -- set the 'L' bit
@@ -162,35 +170,36 @@ encode (LDP index regN regT regT2 imm7) = zero32
   .|. (codeTag regT)
 encode (STR NoOffset regN regT imm12) = zero32
   .|. ((0b1011100100 :: Word32) `shiftL` 22)
-  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. (clampShift imm12 12 10)
   .|. (codeTag regN `shiftL` 5)
   .|. (codeTag regT)
 encode (STR postIndex regN regT imm9) = zero32 -- postIndex in [PreIndex, PostIndex]
   .|. ((0b10111000000 :: Word32) `shiftL` 21)
-  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. (clampShift imm9 9 12)
   .|. (codeTag postIndex `shiftL` 10)
   .|. (codeTag regN `shiftL` 5)
   .|. (codeTag regT)
 encode (LDR NoOffset regN regT imm12) = zero32
   .|. ((0b1011110101 :: Word32) `shiftL` 22)
-  .|. (0b0 `shiftL` 30) -- 32 bit mode
+  .|. (bitMode `shiftL` 30) -- 32 bit mode
   .|. (clampShift imm12 12 10)
   .|. (codeTag regN `shiftL` 5)
   .|. (codeTag regT)
 encode (LDR postIndex regN regT imm9) = zero32
   .|. ((0b10111100010 :: Word32) `shiftL` 21)
-  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. (clampShift imm9 9 12)
   .|. (codeTag postIndex `shiftL` 10)
   .|. (codeTag regN `shiftL` 5)
   .|. (codeTag regT)
 encode (BCOND condFlag imm19)
-  | imm19> 0 = 
+  | imm19 > 0 = 
       ((0b01010100 :: Word32) `shiftL` 24)
   .|. (clampShift imm19 19 5)
   .|. (codeTag condFlag)
+  -- TODO toss this clause
   | otherwise =
       ((0b01010100 :: Word32) `shiftL` 24)
   .|. (clampShift imm19 19 5)
@@ -203,24 +212,40 @@ encode (CMPI reg imm12) = zero32
 encode (B imm26) = zero32
   .|. ((0b00101 :: Word32) `shiftL` 26)
   .|. (clampShift imm26 26 0)
+encode (BL imm26) = zero32
+  .|. ((0b100101 :: Word32) `shiftL` 26)
+  .|. (clampShift imm26 26 0)
+encode (BLR reg) = zero32 
+  .|. ((0b_1101011_0_0_01_11111 :: Word32) `shiftL` 16)
+  .|. (codeTag reg `shiftL` 5)
+encode (BR reg) = zero32 
+  .|. ((0b_1101011_0000_11111 :: Word32) `shiftL` 16)
+  .|. (codeTag reg `shiftL` 5)
 encode (RET reg) = zero32
-  .|. (0b0 `shiftL` 31) -- 32 bit mode
-  .|. ((0b1101011001011111 :: Word32) `shiftL` 16)
+  .|. ((0b_1101011_0_0_10_11111 :: Word32) `shiftL` 16)
   .|. ((codeTag $ fromMaybe LR reg ) `shiftL` 5)
-encode (MOVI movk imm16 reg) = zero32
-  .|. (0b0 `shiftL` 31) -- 32 bit mode
+encode (MOV_reg regMoving regDest) = zero32
+  .|. (bitMode `shiftL` 31)
+  .|. ((0b_01_01010_00_0 :: Word32) `shiftL` 21)
+  .|. (codeTag regMoving `shiftL` 16)
+  .|. ((0b_11111 :: Word32) `shiftL` 5)
+  .|. codeTag regDest
+encode (MOV movk keepbits reg imm16) = zero32 -- (MOVK/MOVZ)
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. (0b10100101 `shiftL` 23)  -- opc + data magic bits
-  .|. (clampShift imm16 16 5)
+  .|. (codeTag keepbits `shiftL` 29)
+  .|. (codeTag movk  `shiftL` 21)
+  .|. (clampShift (fromInteger . toInteger $ imm16) 16 5)
   .|. (codeTag reg)
 encode (ADD carryFlag trg src1 src2) = zero32 -- ADD target = src + src, impl
-  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. (codeTag carryFlag `shiftL` 29)
   .|. (0b01011001 `shiftL` 21)
   .|. (codeTag src1 `shiftL` 16)
   .|. (codeTag src2 `shiftL` 5)
   .|. (codeTag trg)
 encode (SUB carryFlag trg src1 src2) = zero32
-  .|. (0b0 `shiftL` 31) -- 32 bit mode
+  .|. (bitMode `shiftL` 31) -- 32 bit mode
   .|. (codeTag carryFlag `shiftL` 29)
   .|. (0b1001011001 `shiftL` 21)
   .|. (codeTag src1 `shiftL` 16)
