@@ -293,8 +293,24 @@ emit i = modify $ \s -> s
   , instr  = (instr s) ++ [i]
   }
 
+
 assemble :: Ptr a -> ASM b -> Either String JITMem
 assemble start asm = runExcept $ execStateT asm (initState ptr)
   where
     ptr = heapPtr start
+
+
+moveImm32 :: Reg -> Word32 -> ASM ()
+moveImm32 reg word = do
+  emit $ MOV ClearBits Mk0 reg lower
+  emit $ MOV KeepBits Mk16 reg upper
+  where
+    x :: Int
+    x = fromInteger . toInteger $ word
+    mask :: Int
+    mask  = fromInteger . toInteger $ createMask 16 `shiftL` 16
+    upper :: Word16
+    upper = fromInteger . toInteger $ ((x .&. mask) `shiftR` 16)
+    lower :: Word16
+    lower = fromInteger . toInteger $ clampShift x 16 0
 

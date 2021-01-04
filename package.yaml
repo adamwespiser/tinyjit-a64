@@ -12,13 +12,20 @@ extra-source-files:
 - ChangeLog.md
 
 default-extensions:
-  TypeApplications
+- BangPatterns
+- OverloadedStrings
+- TypeApplications
 
 dependencies:
 - base >= 4.7 && < 5
-- unix
+- text
 - transformers
+- unix
 - vector
+
+library:
+  source-dirs: src
+
 
 executables:
   tinyjit-a64-exe:
@@ -29,3 +36,18 @@ executables:
     - -g
     - -dcore-lint
     - -debug
+    dependencies:
+    - tinyjit-a64
+
+tests:
+  tinyjit-a64-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - tinyjit-a64
+    - hspec
+

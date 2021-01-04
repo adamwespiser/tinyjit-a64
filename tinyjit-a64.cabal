@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a65ed92483030f34bbc85f0c89a5ce4f68579e7613a1ba331363569d2f5c7a2d
+-- hash: e217c97518e8d425a9284ccd85cffa70407ec9f5c92d973fff508cd42734d0d8
 
 name:           tinyjit-a64
 version:        0.1.0.0
@@ -25,6 +25,24 @@ source-repository head
   type: git
   location: https://github.com/adamwespiser/tinyjit-a64
 
+library
+  exposed-modules:
+      ASM
+      Main
+      Runtime
+  other-modules:
+      Paths_tinyjit_a64
+  hs-source-dirs:
+      src
+  default-extensions: BangPatterns OverloadedStrings TypeApplications
+  build-depends:
+      base >=4.7 && <5
+    , text
+    , transformers
+    , unix
+    , vector
+  default-language: Haskell2010
+
 executable tinyjit-a64-exe
   main-is: Main.hs
   other-modules:
@@ -33,10 +51,32 @@ executable tinyjit-a64-exe
       Paths_tinyjit_a64
   hs-source-dirs:
       src
-  default-extensions: TypeApplications
+  default-extensions: BangPatterns OverloadedStrings TypeApplications
   ghc-options: -rtsopts -g -dcore-lint -debug
   build-depends:
       base >=4.7 && <5
+    , text
+    , tinyjit-a64
+    , transformers
+    , unix
+    , vector
+  default-language: Haskell2010
+
+test-suite tinyjit-a64-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      TestsSpec
+      Paths_tinyjit_a64
+  hs-source-dirs:
+      test
+  default-extensions: BangPatterns OverloadedStrings TypeApplications
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , hspec
+    , text
+    , tinyjit-a64
     , transformers
     , unix
     , vector
